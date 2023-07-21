@@ -1,0 +1,67 @@
+import imaplib
+import email
+from bs4 import BeautifulSoup
+from tabulate import tabulate
+
+def extract_summary(html_content):
+    # Utilise BeautifulSoup pour extraire le résumé du mail à partir du contenu HTML
+    soup = BeautifulSoup(html_content, "html.parser")
+    # Ici, nous supprimons les balises HTML pour obtenir un texte brut
+    summary = soup.get_text()
+    return summary[:100]  # Vous pouvez ajuster la longueur du résumé ici
+
+def fetch_emails(username, password, mailbox="INBOX"):
+    # Connexion au serveur IMAP et sélection de la boîte de réception
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")  # Remplacez "imap.gmail.com" par le serveur IMAP approprié
+    mail.login(username, password)
+    mail.select(mailbox)
+
+    # Recherche de tous les mails non lus
+    _, message_numbers = mail.search(None, "UNSEEN")
+
+    daily_data = []
+    for num in message_numbers[0].split():
+        # Récupérer le contenu brut du mail
+        _, data = mail.fetch(num, "(RFC822)")
+        raw_email = data[0][1]
+
+        # Analyse de l'email
+        msg = email.message_from_bytes(raw_email)
+        sender = msg["From"]
+        recipients = msg.get_all("To", [])
+        priority = msg["X-Priority"]
+        attachments = len(msg.get_payload())
+
+        # Recherche du contenu du mail en texte brut ou en HTML
+        content = ""
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain":
+                content = part.get_payload(decode=True).decode()
+                break
+            elif part.get_content_type() == "text/html":
+                content = part.get_payload(decode=True).decode()
+                break
+
+        summary = extract_summary(content)
+
+        # Ajout des informations extraites dans le tableau quotidien
+        daily_data.append([num.decode(), sender, recipients, priority, attachments, summary])
+
+    # Fermeture de la connexion au serveur IMAP
+    mail.logout()
+
+    return daily_data
+
+def main():
+    username = "votre_adresse_email@gmail.com"  # Remplacez par votre adresse e-mail
+    password = "votre_mot_de_passe"  # Remplacez par votre mot de passe
+
+    # Récupération des données des emails non lus pour aujourd'hui
+    daily_data = fetch_emails(username, password)
+
+    # Affichage des données sous forme de tableau
+    headers = ["Numéro", "Expéditeur", "Destinataires", "Priorité", "Pièces jointes", "Résumé"]
+    print(tabulate(daily_data, headers=headers))
+
+if __name__ == "__main__":
+    main()
